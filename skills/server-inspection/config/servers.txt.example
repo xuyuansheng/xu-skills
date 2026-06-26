@@ -1,0 +1,17 @@
+# 目标服务器列表（模板）
+# 首次使用：复制为本目录下的 servers.txt 并填写实际服务器
+#   cp config/servers.txt.example config/servers.txt
+#
+# ⚠️ 勿将含密码的 servers.txt 提交到 Git（已在 .gitignore 中排除）
+# 密码请用环境变量、SSH 密钥或本地私密存储，避免明文写入此文件
+
+# 格式:
+#   user@ip                         → 使用 bastion.conf 中 SSH_CONNECT_MODE 默认模式
+#   @direct user@ip:password        → 该台强制直连（密码登录，需 pip install paramiko）
+#   @bastion user@ip                → 该台强制经堡垒机
+# 以 # 开头的行为注释
+
+# 示例（请替换为实际地址，删除密码行或改用密钥登录）:
+# ops@10.0.0.1
+# root@10.0.0.2
+# @direct root@10.0.0.3:yourpassword

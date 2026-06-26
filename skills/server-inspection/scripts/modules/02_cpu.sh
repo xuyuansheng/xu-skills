@@ -22,16 +22,22 @@ run_remote "$TARGET" \
     'uptime' \
     'echo "CPU核数: $(nproc)"' \
     'echo ""' \
-    'echo "--- 运行队列 ---"' \
-    'vmstat 1 2 2>/dev/null | tail -1 || echo "vmstat 不可用"' \
-    'echo ""' \
     'echo "--- CPU 使用率分布 ---"' \
-    'top -bn1 2>/dev/null | grep -E "Cpu\\(s\\)|%Cpu" | head -1 || mpstat 1 1 2>/dev/null | tail -1 || echo "无法获取"' \
-    'echo ""' \
-    'echo "--- 每核 CPU (mpstat) ---"' \
-    'mpstat -P ALL 1 1 2>/dev/null | tail -n +4 || echo "mpstat 不可用"' \
-    'echo ""' \
-    'echo "--- CPU Top 5 ---"' \
-    'ps -eo pid,user,%cpu,%mem,comm --sort=-%cpu 2>/dev/null | head -6'
+    'top -bn1 2>/dev/null | grep -E "Cpu\\(s\\)|%Cpu" | head -1 || mpstat 1 1 2>/dev/null | tail -1 || echo "无法获取"'
+
+if [[ -z "${JUMPSERVER_QUICK:-}" ]]; then
+    run_remote "$TARGET" \
+        'echo ""' \
+        'echo "--- 运行队列 ---"' \
+        'vmstat 1 2 2>/dev/null | tail -1 || echo "vmstat 不可用"' \
+        'echo ""' \
+        'echo "--- 每核 CPU (mpstat) ---"' \
+        'mpstat -P ALL 1 1 2>/dev/null | tail -n +4 || echo "mpstat 不可用"' \
+        'echo ""' \
+        'echo "--- CPU Top 5 ---"' \
+        'ps -eo pid,user,%cpu,%mem,comm --sort=-%cpu 2>/dev/null | head -6'
+else
+    echo "[quick] 已跳过: 运行队列(vmstat)、每核 CPU(mpstat)、CPU Top 5"
+fi
 
 echo ""

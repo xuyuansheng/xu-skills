@@ -25,9 +25,15 @@ run_remote "$TARGET" \
     'free | awk "/Mem:/ {printf \"%.1f%%\n\", (\$3/\$2)*100}"' \
     'echo ""' \
     'echo "--- Swap 状态 ---"' \
-    'swapon --show 2>/dev/null | tail -n +2 || echo "未启用"' \
-    'echo ""' \
-    'echo "--- 高内存进程 Top 5 ---"' \
-    'ps -eo pid,user,%cpu,%mem,rss,comm --sort=-%mem 2>/dev/null | head -6'
+    'swapon --show 2>/dev/null | tail -n +2 || echo "未启用"'
+
+if [[ -z "${JUMPSERVER_QUICK:-}" ]]; then
+    run_remote "$TARGET" \
+        'echo ""' \
+        'echo "--- 高内存进程 Top 5 ---"' \
+        'ps -eo pid,user,%cpu,%mem,rss,comm --sort=-%mem 2>/dev/null | head -6'
+else
+    echo "[quick] 已跳过: 高内存进程 Top 5"
+fi
 
 echo ""

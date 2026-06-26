@@ -1,12 +1,15 @@
-# JumpServer 堡垒机连接配置
-# 修改此文件后无需重启，脚本会自动读取
+# JumpServer 堡垒机连接配置（模板）
+# 首次使用：复制为本目录下的 bastion.conf 并填写实际参数
+#   cp config/bastion.conf.example config/bastion.conf
+#
+# ⚠️ 勿将 bastion.conf 提交到 Git（已在 .gitignore 中排除）
 
 # 堡垒机地址和端口
-BASTION_HOST="172.18.2.97"
+BASTION_HOST="YOUR_BASTION_HOST"
 BASTION_PORT="60022"
 
 # 堡垒机登录用户
-BASTION_USER="yuansheng.xu"
+BASTION_USER="your.username"
 
 # SSH 选项
 # LogLevel=ERROR 抑制 OpenSSH "post-quantum" 等无关警告

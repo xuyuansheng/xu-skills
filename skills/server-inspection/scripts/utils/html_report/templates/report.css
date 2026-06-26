@@ -1,0 +1,370 @@
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+        background: @C:bg@;
+        color: @C:text@;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+        padding: 24px; max-width: 1100px; margin: 0 auto;
+    }
+    /* ── 头部 ── */
+    .header {
+        padding: 24px; border: 1px solid @C:border@;
+        border-radius: 10px; background: @C:card@;
+        margin-bottom: 24px;
+        display: flex; justify-content: space-between; align-items: flex-start;
+        flex-wrap: wrap; gap: 16px;
+    }
+    .header h1 { font-size: 22px; margin-bottom: 8px; }
+    .header .info { color: @C:dim@; font-size: 14px; line-height: 1.8; }
+    .header .info b { color: @C:text@; }
+    .status-dot { font-size: 32px; }
+    /* ── 模块 ── */
+    .module {
+        margin-bottom: 20px;
+        border: 1px solid @C:border@;
+        border-radius: 10px; overflow: hidden;
+    }
+    .module-title {
+        padding: 14px 18px; background: @C:card@;
+        font-size: 15px; font-weight: 600; border-bottom: 1px solid @C:border@;
+    }
+    .metrics-grid {
+        padding: 12px;
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(480px, 1fr));
+        gap: 10px;
+    }
+    /* ── 指标卡片 ── */
+    .metric-card {
+        background: @C:card@;
+        border: 1px solid @C:border@;
+        border-radius: 8px; overflow: hidden;
+    }
+    .metric-header {
+        padding: 10px 14px;
+        background: @C:pre_bg@;
+        display: flex; justify-content: space-between; align-items: center;
+        gap: 12px; border-bottom: 1px solid @C:border@;
+    }
+    .metric-title {
+        font-size: 13px; font-weight: 600; color: @C:accent@;
+        white-space: nowrap;
+    }
+    .metric-val {
+        font-size: 12px; color: @C:dim@;
+        text-align: right; overflow: hidden; text-overflow: ellipsis;
+        white-space: nowrap; max-width: 280px;
+    }
+    .card-body { padding: 8px 14px; }
+    .metric-desc {
+        padding: 8px 14px;
+        font-size: 12px; color: @C:dim@;
+        line-height: 1.6; border-top: 1px solid @C:border@;
+        background: @C:pre_bg@;
+    }
+    /* ── 知识库 ── */
+    .kb-section { margin-bottom: 8px; }
+    .kb-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+        gap: 6px;
+    }
+    .kb-item {
+        background: @C:card@;
+        border: 1px solid @C:border@;
+        border-radius: 6px; padding: 8px 10px;
+        font-size: 11.5px; line-height: 1.6;
+    }
+    .kb-tag {
+        display: inline-block; padding: 1px 6px; border-radius: 3px;
+        font-size: 10.5px; font-weight: 600; margin-right: 4px;
+    }
+    .kb-tag.tag-good { background: #1a3a1a; color: @C:green@; }
+    .kb-tag.tag-warn { background: #3a2e1a; color: @C:yellow@; }
+    .kb-tag.tag-bad  { background: #3a1a1a; color: @C:red@; }
+    .kb-tag.tag-dim  { background: #21262d; color: @C:dim@; }
+    /* ── CPU 指标明细表格 ── */
+    .cpu-tbl {
+        width: 100%; border-collapse: collapse; font-size: 12px;
+    }
+    .cpu-tbl th {
+        background: @C:th_bg@;
+        color: @C:dim@;
+        padding: 7px 10px; font-size: 11px; font-weight: 500;
+        text-align: left; border-bottom: 2px solid @C:border@;
+    }
+    .cpu-tbl td { padding: 8px 10px; border-bottom: 1px solid @C:border@; }
+    .cpu-row        { background: @C:row@; }
+    .cpu-row:hover  { background: @C:th_bg@; }
+    .cpu-row.cpu-green  { border-left: 3px solid @C:green@; }
+    .cpu-row.cpu-yellow { border-left: 3px solid @C:yellow@; }
+    .cpu-row.cpu-red    { border-left: 3px solid @C:red@; }
+    .cpu-col-name b { color: @C:text@; font-size: 13px; display: block; }
+    .cpu-col-key   { font-size: 10px; color: @C:dim@; }
+    .cpu-col-val   { font-size: 16px; font-weight: 700; color: @C:text@; white-space: nowrap; }
+    .cpu-col-pct   { font-size: 11px; color: @C:dim@; font-weight: 400; }
+    .cpu-col-light { font-size: 16px; text-align: center; }
+    .cpu-col-desc  { color: @C:dim@; font-size: 11.5px; }
+    .cpu-col-thresh { font-size: 10.5px; white-space: nowrap; }
+    .thresh-good   { color: @C:green@; }
+    .thresh-warn   { color: @C:yellow@; }
+    .thresh-danger { color: @C:red@; }
+    .cpu-col-fix   { color: @C:dim@; font-size: 11px; line-height: 1.5; }
+    /* 窄屏时 CPU 表格横向滚动 */
+    .card-body { overflow-x: auto; }
+    /* ── CPU 异常指标汇总 ── */
+    .cpu-anomaly-banner {
+        grid-column: 1 / -1;
+        padding: 14px 18px;
+        border: 1px solid @C:border@;
+        border-radius: 8px;
+        background: @C:card@;
+        margin-bottom: 4px;
+    }
+    .cpu-anomaly-ok { border-left: 3px solid @C:green@; }
+    .cpu-anomaly-warn { border-left: 3px solid @C:yellow@; }
+    .cpu-anomaly-red { border-left: 3px solid @C:red@; }
+    .cpu-anomaly-title {
+        font-size: 13px; font-weight: 600; color: @C:accent@;
+        margin-bottom: 8px;
+    }
+    .cpu-anomaly-none {
+        font-size: 13px; color: @C:green@;
+    }
+    .cpu-anomaly-list {
+        list-style: none; padding: 0; margin: 0;
+        font-size: 12.5px; line-height: 1.8;
+    }
+    .cpu-anomaly-list li { padding: 2px 0; }
+    .cpu-anomaly-li-red { color: @C:red@; }
+    .cpu-anomaly-li-yellow { color: @C:yellow@; }
+    /* ── Load 说明与排查指引 ── */
+    .load-guide {
+        margin-bottom: 12px;
+        padding: 12px 14px;
+        border: 1px solid @C:border@;
+        border-radius: 8px;
+        font-size: 12.5px;
+        line-height: 1.7;
+    }
+    .load-guide-info {
+        background: @C:pre_bg@;
+        border-left: 3px solid @C:accent@;
+    }
+    .load-guide-warn {
+        background: @C:pre_bg@;
+        border-left: 3px solid @C:yellow@;
+    }
+    .load-guide-bad {
+        background: @C:pre_bg@;
+        border-left: 3px solid @C:red@;
+    }
+    .load-guide-title {
+        font-size: 13px;
+        font-weight: 600;
+        color: @C:accent@;
+        margin-bottom: 8px;
+    }
+    .load-guide-collapsible {
+        margin-top: 10px;
+        margin-bottom: 0;
+    }
+    .load-guide-collapsible > summary.load-guide-title {
+        cursor: pointer;
+        list-style: none;
+        margin-bottom: 0;
+        user-select: none;
+    }
+    .load-guide-collapsible > summary.load-guide-title::-webkit-details-marker {
+        display: none;
+    }
+    .load-guide-collapsible > summary.load-guide-title::before {
+        content: "▸ ";
+        display: inline-block;
+        width: 1em;
+        color: @C:dim@;
+    }
+    .load-guide-collapsible[open] > summary.load-guide-title::before {
+        content: "▾ ";
+    }
+    .load-guide-collapsible[open] > summary.load-guide-title {
+        margin-bottom: 8px;
+    }
+    .load-guide-collapsible > .load-guide-body {
+        padding-top: 2px;
+    }
+    .load-guide-body p { margin: 6px 0; color: @C:text@; }
+    .load-guide-body code {
+        background: @C:card@;
+        padding: 1px 5px;
+        border-radius: 3px;
+        font-size: 11.5px;
+        color: @C:accent@;
+    }
+    .load-ref-tbl {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 8px 0;
+        font-size: 12px;
+    }
+    .load-ref-tbl th, .load-ref-tbl td {
+        padding: 6px 10px;
+        border: 1px solid @C:border@;
+        text-align: left;
+    }
+    .load-ref-tbl th {
+        background: @C:th_bg@;
+        color: @C:dim@;
+        font-weight: 500;
+    }
+    .load-thresh { margin-top: 8px; }
+    .load-trend-hint {
+        margin-top: 10px;
+        padding: 8px 12px;
+        background: @C:pre_bg@;
+        border-radius: 6px;
+        font-size: 12px;
+        color: @C:dim@;
+    }
+    .load-guide-list {
+        margin: 6px 0 0 18px;
+        color: @C:text@;
+    }
+    .load-guide-list li { margin: 8px 0; }
+    .load-guide-list ul {
+        margin: 4px 0 0 16px;
+        list-style: disc;
+    }
+    .load-example {
+        padding: 6px 10px;
+        background: @C:card@;
+        border-radius: 4px;
+        margin-bottom: 8px;
+        color: @C:dim@;
+    }
+    /* ── 表格 ── */
+    .tbl {
+        width: 100%; border-collapse: collapse; font-size: 12px;
+    }
+    .tbl th {
+        background: @C:th_bg@;
+        color: @C:dim@;
+        padding: 6px 10px; text-align: left;
+        border: 1px solid @C:border@;
+        font-weight: 500; font-size: 11px; text-transform: uppercase;
+    }
+    .tbl td {
+        padding: 5px 10px; border: 1px solid @C:border@;
+        color: @C:text@;
+    }
+    .tbl tr { background: @C:row@; }
+    .tbl tr.alt { background: @C:row_alt@; }
+    /* ── Pre ── */
+    .pre {
+        background: @C:pre_bg@;
+        color: @C:text@;
+        padding: 10px; border-radius: 6px;
+        font-size: 13px; line-height: 1.5;
+        white-space: pre-wrap; word-break: break-all;
+        overflow-x: auto; max-height: 300px; overflow-y: auto;
+    }
+    /* ── 内存使用率进度条 ── */
+    .mem-usage-bar {
+        padding: 8px 14px; display: flex; gap: 16px;
+        border-bottom: 1px solid @C:border@;
+        background: @C:pre_bg@;
+    }
+    .mem-usage-item {
+        flex: 1; min-width: 0;
+    }
+    .mem-usage-header {
+        display: flex; justify-content: space-between; align-items: center;
+        font-size: 12px; margin-bottom: 5px;
+    }
+    .bar-track {
+        width: 100%; height: 8px; background: @C:bg@;
+        border-radius: 4px; overflow: hidden;
+    }
+    .bar-fill {
+        height: 100%; border-radius: 4px; transition: width 0.4s ease;
+    }
+    /* ── 内存纵向键值对卡片 ── */
+    .kv-card {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 4px 16px;
+    }
+    .kv-row {
+        display: flex; justify-content: space-between; align-items: center;
+        padding: 6px 0; border-bottom: 1px solid @C:border@;
+    }
+    .kv-key {
+        font-size: 12px; color: @C:dim@;
+    }
+    .kv-val {
+        font-size: 14px; font-weight: 600; color: @C:text@;
+        font-variant-numeric: tabular-nums;
+    }
+    .kv-used .kv-val { color: @C:accent@; }
+    .kv-avail .kv-val { color: @C:green@; }
+    .kv-warn .kv-val { color: @C:yellow@; }
+    .kv-dim  .kv-val { color: @C:dim@; }
+    /* ── 页脚 ── */
+    .footer {
+        text-align: center; color: @C:dim@;
+        font-size: 12px; margin-top: 32px; padding-top: 16px;
+        border-top: 1px solid @C:border@;
+    }
+    /* ── Tab 页 ── */
+    .tab-container {
+        border: 1px solid @C:border@;
+        border-radius: 10px;
+        overflow: hidden;
+        background: @C:card@;
+        margin-bottom: 20px;
+    }
+    .tab-nav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0;
+        border-bottom: 1px solid @C:border@;
+        background: @C:pre_bg@;
+        overflow-x: auto;
+    }
+    .tab-btn {
+        padding: 12px 18px;
+        border: none;
+        background: transparent;
+        color: @C:dim@;
+        cursor: pointer;
+        font-size: 14px;
+        font-family: inherit;
+        border-bottom: 2px solid transparent;
+        white-space: nowrap;
+        transition: color 0.15s, background 0.15s;
+    }
+    .tab-btn:hover {
+        color: @C:text@;
+        background: @C:card@;
+    }
+    .tab-btn.active {
+        color: @C:accent@;
+        border-bottom-color: @C:accent@;
+        background: @C:card@;
+        font-weight: 600;
+    }
+    .tab-status {
+        font-size: 10px;
+        margin-left: 4px;
+        vertical-align: middle;
+    }
+    .tab-panels { background: @C:card@; }
+    .tab-panel {
+        display: none;
+        padding: 12px;
+        animation: tabFadeIn 0.2s ease;
+    }
+    .tab-panel.active { display: block; }
+    @keyframes tabFadeIn {
+        from { opacity: 0; }
+        to   { opacity: 1; }
+    }

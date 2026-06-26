@@ -10,6 +10,8 @@
 #   批量巡检:      bash check_server.sh --all
 #   批量生成 HTML: bash check_server.sh --all --html [dir/]
 #   自定义配置目录: bash check_server.sh --config /path/to/config [其他参数]
+#   混合连接:       bash check_server.sh root@172.16.202.92 'root@ip:pass' --direct
+#   默认连接模式见 config/bastion.conf 的 SSH_CONNECT_MODE
 #
 # 模块列表（按执行顺序）:
 #   02_cpu          CPU 与负载
@@ -37,10 +39,13 @@ ALL_MODULES=(
     "06_network"
 )
 
+# --quick：仍跑 5 模块，但各模块跳过耗时子项（见 JUMPSERVER_QUICK=1）
 QUICK_MODULES=(
     "02_cpu"
     "03_memory"
     "04_disk"
+    "05_process"
+    "06_network"
 )
 
 # ── 颜色输出（无 TTY 时自动禁用）────────────────────────────
@@ -78,8 +83,32 @@ find_python() {
     fi
 }
 
+# ── 帮助信息 ──────────────────────────────────────────────────
+show_help() {
+    echo "用法: $0 [user@ip ...] [选项]"
+    echo ""
+    echo "选项:"
+    echo "  user@ip            目标服务器；密码格式 user@ip:password（含特殊字符请加引号）"
+    echo "                     在地址后加 --direct / --bastion 可指定该台连接方式"
+    echo "  --all               批量巡检（读取 config/servers.txt，支持 @direct/@bastion 前缀）"
+    echo "  --quick             快速检查（5 模块精简子项，终端模式；--html 时始终全量采集）"
+    echo "  --module <name>    执行指定模块（可多次使用，如 02_cpu）"
+    echo "  --html [dir/]      生成 HTML 报告（单台可指定文件；多台/批量输出到目录并生成 index.html）"
+    echo "  --list-modules     列出所有可用模块"
+    echo "  --config <dir>     指定配置目录（默认: ../config）"
+    echo "  -h, --help         显示帮助"
+    echo ""
+    echo "示例:"
+    echo "  $0 root@172.16.202.92"
+    echo "  $0 root@172.16.202.92 'root@172.18.4.152:yourpass' --direct"
+    echo "  $0 --all"
+    echo "  $0 --all --html reports/"
+}
+
 # ── 参数解析 ──────────────────────────────────────────────────
-TARGET=""
+TARGETS=()
+TARGETS_RAW=()
+TARGETS_RAW_MODE=()
 BATCH_MODE=false
 LIST_MODULES=false
 SELECTED_MODULES=()
@@ -121,6 +150,22 @@ while [[ $# -gt 0 ]]; do
             SERVERS_FILE="$CONFIG_DIR/servers.txt"
             shift 2
             ;;
+        --direct)
+            if [[ ${#TARGETS_RAW[@]} -eq 0 ]]; then
+                log_error "--direct 须写在目标地址之后，例如: $0 'root@ip:pass' --direct"
+                exit 1
+            fi
+            TARGETS_RAW_MODE[$((${#TARGETS_RAW[@]} - 1))]="direct"
+            shift
+            ;;
+        --bastion)
+            if [[ ${#TARGETS_RAW[@]} -eq 0 ]]; then
+                log_error "--bastion 须写在目标地址之后，例如: $0 root@ip --bastion"
+                exit 1
+            fi
+            TARGETS_RAW_MODE[$((${#TARGETS_RAW[@]} - 1))]="bastion"
+            shift
+            ;;
         -h|--help)
             show_help
             exit 0
@@ -130,36 +175,17 @@ while [[ $# -gt 0 ]]; do
             exit 1
             ;;
         *)
-            if [[ -z "$TARGET" ]]; then
-                TARGET="$1"
+            if [[ "$1" == *"@"* ]]; then
+                TARGETS_RAW+=("$1")
+                TARGETS_RAW_MODE+=("")
+            else
+                log_error "未知参数: $1（服务器地址需为 user@ip 格式）"
+                exit 1
             fi
             shift
             ;;
     esac
 done
-
-# ── 帮助信息 ──────────────────────────────────────────────────
-show_help() {
-    echo "用法: $0 [user@ip] [选项]"
-    echo ""
-    echo "选项:"
-    echo "  user@ip            检查单台服务器"
-    echo "  --all               批量巡检（读取 config/servers.txt）"
-    echo "  --quick             快速检查（仅系统/CPU/内存/磁盘/进程）"
-    echo "  --module <name>    执行指定模块（可多次使用）"
-    echo "  --html [file]      生成 HTML 报告（可选指定输出文件）"
-    echo "  --list-modules     列出所有可用模块"
-    echo "  --config <dir>     指定配置目录（默认: ../config）"
-    echo "  -h, --help         显示帮助"
-    echo ""
-    echo "示例:"
-    echo "  $0 root@172.16.202.92"
-    echo "  $0 root@172.16.202.92 --quick"
-    echo "  $0 root@172.16.202.92 --module cpu --module memory"
-    echo "  $0 root@172.16.202.92 --html report.html"
-    echo "  $0 --all"
-    echo "  $0 --all --html reports/"
-}
 
 # ── 列出模块 ──────────────────────────────────────────────────
 if [[ "$LIST_MODULES" == "true" ]]; then
@@ -178,38 +204,81 @@ if [[ "$LIST_MODULES" == "true" ]]; then
         fi
     done
     echo ""
-    echo "快速模式 (--quick) 包含: ${QUICK_MODULES[*]}"
+    echo "快速模式 (--quick): 同上 5 模块，跳过 mpstat/vmstat/Top5 等耗时子项（--html 时不生效）"
     exit 0
 fi
 
-# ── 加载堡垒机配置 ───────────────────────────────────────────
-if [[ ! -f "$BASTION_CONF" ]]; then
-    log_error "找不到堡垒机配置文件: $BASTION_CONF"
-    log_info "请先编辑 config/bastion.conf，填入堡垒机连接参数"
-    exit 1
+# ── 加载 SSH 连接配置（remote_exec.sh）────────────────────────
+export JUMPSERVER_CONFIG_DIR="$(cd "$CONFIG_DIR" && pwd)"
+# shellcheck source=utils/remote_exec.sh
+source "$UTILS_DIR/remote_exec.sh"
+
+declare -A TARGET_PASSWORDS
+declare -A TARGET_CONNECT_MODES
+
+# 从原始地址列表构建规范化 TARGETS，并登记密码/连接模式
+register_targets_from_raw() {
+    local -a raw_list=("$@")
+    local -a mode_list=()
+    local i raw norm pw mode
+
+    if [[ ${#raw_list[@]} -eq ${#TARGETS_RAW_MODE[@]} && ${#TARGETS_RAW_MODE[@]} -gt 0 ]]; then
+        mode_list=("${TARGETS_RAW_MODE[@]}")
+    fi
+
+    TARGETS=()
+    for i in "${!raw_list[@]}"; do
+        raw="$(strip_target_quotes "${raw_list[$i]}")"
+        mode="${mode_list[$i]:-}"
+        parse_ssh_target "$raw"
+        norm="$_SSH_PARSED_TARGET"
+        pw="${_SSH_TARGET_PW:-}"
+
+        TARGETS+=("$norm")
+        [[ -n "$pw" ]] && TARGET_PASSWORDS["$norm"]="$pw"
+        [[ -n "$mode" ]] && TARGET_CONNECT_MODES["$norm"]="$mode"
+    done
+    return 0
+}
+
+# 解析 servers.txt 单行（支持 @direct / @bastion 前缀）
+parse_servers_line() {
+    local line="$1"
+    local mode="" raw norm pw
+
+    if [[ "$line" =~ ^@(direct|bastion)[[:space:]]+(.+)$ ]]; then
+        mode="${BASH_REMATCH[1]}"
+        line="${BASH_REMATCH[2]}"
+    fi
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+    raw="$(strip_target_quotes "$line")"
+    [[ "$raw" != *"@"* ]] && return 1
+
+    parse_ssh_target "$raw"
+    norm="$_SSH_PARSED_TARGET"
+    pw="${_SSH_TARGET_PW:-}"
+
+    TARGETS+=("$norm")
+    [[ -n "$pw" ]] && TARGET_PASSWORDS["$norm"]="$pw"
+    [[ -n "$mode" ]] && TARGET_CONNECT_MODES["$norm"]="$mode"
+    return 0
+}
+
+if [[ ${#TARGETS_RAW[@]} -gt 0 ]]; then
+    register_targets_from_raw "${TARGETS_RAW[@]}"
 fi
-
-source "$BASTION_CONF"
-
-if [[ -z "${BASTION_HOST:-}" || -z "${BASTION_PORT:-}" || -z "${BASTION_USER:-}" ]]; then
-    log_error "bastion.conf 缺少必要参数，请检查 BASTION_HOST / BASTION_PORT / BASTION_USER"
-    exit 1
-fi
-
-SSH_OPTS="${SSH_OPTS:-"-o StrictHostKeyChecking=no -o ConnectTimeout=10"}"
-SSH_PROXY="ssh $SSH_OPTS -p $BASTION_PORT $BASTION_USER@$BASTION_HOST -W %h:%p"
 
 # ── 连接测试函数 ──────────────────────────────────────────────
 test_connection() {
     local target="$1"
-    log_info "测试连接: $target ..."
-    if ssh $SSH_OPTS \
-        -o ProxyCommand="$SSH_PROXY" \
-        "$target" "echo OK" >/dev/null 2>&1; then
+    export_ssh_session "$target"
+    log_info "测试连接: $target [$(ssh_connect_mode_label)] ..."
+    if test_ssh_connection "$target"; then
         log_info "连接成功: $target"
         return 0
     else
-        log_error "连接失败: $target（请检查 IP、用户、网络、堡垒机权限）"
+        log_error "连接失败: $target（$(ssh_connect_mode_label)，请检查 IP、用户、网络）"
         return 1
     fi
 }
@@ -262,6 +331,195 @@ generate_html() {
     "$py" "$win_script" "$win_temp" "$win_out"
 }
 
+# ── 创建临时目录 ──────────────────────────────────────────────
+create_temp_dir() {
+    local temp_base="$SCRIPT_DIR/.jumpserver-temp"
+    mkdir -p "$temp_base" 2>/dev/null
+    local temp_dir="$temp_base/run_$(date '+%s')_$$"
+    mkdir -p "$temp_dir" 2>/dev/null
+    if [[ ! -d "$temp_dir" ]]; then
+        temp_base="$HOME/.jumpserver-monitor/tmp"
+        mkdir -p "$temp_base" 2>/dev/null
+        temp_dir="$temp_base/run_$(date '+%s')_$$"
+        mkdir -p "$temp_dir" 2>/dev/null
+    fi
+    if [[ ! -d "$temp_dir" ]]; then
+        return 1
+    fi
+    echo "$temp_dir"
+}
+
+# ── 解析批量 HTML 输出目录 ────────────────────────────────────
+resolve_batch_html_dir() {
+    local batch_ts="$1"
+    local html_dir=""
+
+    if [[ -z "$HTML_OUTPUT" ]]; then
+        html_dir="./reports/run_${batch_ts}"
+    elif [[ "$HTML_OUTPUT" == */ || "$HTML_OUTPUT" == *\\ ]]; then
+        html_dir="${HTML_OUTPUT}run_${batch_ts}"
+    elif [[ -d "$HTML_OUTPUT" ]]; then
+        html_dir="$HTML_OUTPUT/run_${batch_ts}"
+    else
+        html_dir="$(dirname "$HTML_OUTPUT")/run_${batch_ts}"
+        [[ "$(dirname "$HTML_OUTPUT")" == "." ]] && html_dir="./reports/run_${batch_ts}"
+    fi
+
+    mkdir -p "$html_dir" 2>/dev/null
+    echo "$html_dir"
+}
+
+# ── 生成批量巡检目录页 index.html ─────────────────────────────
+generate_index_html() {
+    local manifest_file="$1"
+    local index_file="$2"
+
+    local py
+    py="$(find_python)"
+    if [[ -z "$py" ]]; then
+        log_error "未找到 Python，无法生成目录页"
+        return 1
+    fi
+
+    local gen_script="$UTILS_DIR/gen_index.py"
+    if [[ ! -f "$gen_script" ]]; then
+        log_error "未找到 gen_index.py: $gen_script"
+        return 1
+    fi
+
+    local win_script="$gen_script"
+    local win_manifest="$manifest_file"
+    local win_index="$index_file"
+    if [[ "$gen_script" == /e/* ]]; then win_script="E:${gen_script#/e}"; fi
+    if [[ "$manifest_file" == /e/* ]]; then win_manifest="E:${manifest_file#/e}"; fi
+    if [[ "$index_file" == /e/* ]]; then win_index="E:${index_file#/e}"; fi
+
+    "$py" "$win_script" "$win_manifest" "$win_index"
+}
+
+# ── 批量/多台 HTML 巡检 ───────────────────────────────────────
+run_multi_html_inspection() {
+    local -n _targets=$1
+    local modules=("${@:2}")
+
+    local batch_ts check_time
+    batch_ts="$(date '+%Y%m%d_%H%M%S')"
+    check_time="$(date '+%Y-%m-%d %H:%M:%S')"
+
+    local html_dir
+    html_dir="$(resolve_batch_html_dir "$batch_ts")"
+    log_info "批量 HTML 模式: 输出目录=$html_dir"
+
+    echo "============================================"
+    echo "  多台服务器 HTML 巡检"
+    echo "  连接方式: 按目标（默认 ${SSH_DEFAULT_CONNECT_MODE}）"
+    echo "  服务器数量: ${#_targets[@]}"
+    echo "  输出目录: $html_dir"
+    echo "============================================"
+
+    local manifest_file="$html_dir/manifest.json"
+    local reports_json="["
+    local failed_json="["
+    local success_count=0
+    local html_reports=()
+    local first_report=true
+    local first_failed=true
+
+    for line in "${_targets[@]}"; do
+        if [[ "$line" != *"@"* ]]; then
+            log_warn "跳过格式错误的地址: $line"
+            continue
+        fi
+
+        if ! test_connection "$line"; then
+            if [[ "$first_failed" == "true" ]]; then first_failed=false; else failed_json+=","; fi
+            failed_json+="{\"target\":\"$line\",\"reason\":\"连接失败\"}"
+            continue
+        fi
+
+        local temp_dir ip_part html_file reported_hostname
+        temp_dir="$(create_temp_dir)" || {
+            log_error "无法创建临时目录，跳过 $line"
+            if [[ "$first_failed" == "true" ]]; then first_failed=false; else failed_json+=","; fi
+            failed_json+="{\"target\":\"$line\",\"reason\":\"临时目录创建失败\"}"
+            continue
+        }
+
+        ip_part="$(target_host_ip "$line")"
+        html_file="$html_dir/report_${ip_part}.html"
+        HTML_OUTPUT="$html_file"
+
+        run_modules "$line" "$temp_dir" "${modules[@]}"
+
+        reported_hostname=""
+        if [[ -f "$temp_dir/metadata.json" ]]; then
+            reported_hostname="$(grep -o '"hostname"[[:space:]]*:[[:space:]]*"[^"]*"' "$temp_dir/metadata.json" | head -1 | sed 's/.*"\([^"]*\)"$/\1/')"
+        fi
+        rm -rf "$temp_dir" 2>/dev/null
+
+        html_reports+=("$html_file")
+        ((success_count++))
+
+        if [[ "$first_report" == "true" ]]; then first_report=false; else reports_json+=","; fi
+        reports_json+=$(cat <<EOF
+{"target":"$line","ip":"$ip_part","hostname":"$reported_hostname","file":"report_${ip_part}.html","status":"ok"}
+EOF
+)
+    done
+
+    reports_json+="]"
+    failed_json+="]"
+
+    cat > "$manifest_file" << MANIFEST
+{
+    "check_time": "$check_time",
+    "output_dir": "$html_dir",
+    "reports": $reports_json,
+    "failed": $failed_json
+}
+MANIFEST
+
+    local index_file="$html_dir/index.html"
+    if [[ $success_count -gt 0 ]]; then
+        generate_index_html "$manifest_file" "$index_file"
+    elif [[ "$failed_json" != "[]" ]]; then
+        generate_index_html "$manifest_file" "$index_file"
+    fi
+
+    echo ""
+    echo "============================================"
+    echo "  批量 HTML 巡检完成"
+    echo "  成功: $success_count 台"
+    echo "  输出目录: $html_dir"
+    if [[ -f "$index_file" ]]; then
+        echo "  目录页: $index_file"
+    fi
+    if [[ "$failed_json" != "[]" ]]; then
+        echo "  部分服务器连接失败，详见 index.html"
+    fi
+    if [[ ${#html_reports[@]} -gt 0 ]]; then
+        echo "  各 IP 报告:"
+        for r in "${html_reports[@]}"; do
+            echo "    - $r"
+        done
+    fi
+    echo "============================================"
+}
+
+# ── 确定模块列表 ──────────────────────────────────────────────
+# HTML 报告始终包含全部 5 模块（除非 --module 指定子集）
+resolve_modules() {
+    if [[ ${#SELECTED_MODULES[@]} -gt 0 ]]; then
+        echo "${SELECTED_MODULES[@]}"
+    elif [[ "$HTML_MODE" == "true" ]]; then
+        echo "${ALL_MODULES[@]}"
+    elif [[ "$QUICK_MODE" == "true" ]]; then
+        echo "${QUICK_MODULES[@]}"
+    else
+        echo "${ALL_MODULES[@]}"
+    fi
+}
+
 # ── 执行模块函数（核心）─────────────────────────────────────
 # 当 HTML_MODE 时：将每个模块输出保存到 temp_dir/module_XX_name.txt
 # 当非 HTML_MODE 时：直接输出到终端
@@ -269,6 +527,15 @@ run_modules() {
     local target="$1"
     local temp_dir="${2:-}"
     local modules=("${@:3}")
+
+    # 终端快速模式：精简远程采集；HTML 报告始终全量
+    if [[ "$QUICK_MODE" == "true" && "$HTML_MODE" != "true" ]]; then
+        export JUMPSERVER_QUICK=1
+    else
+        unset JUMPSERVER_QUICK
+    fi
+
+    export_ssh_session "$target"
 
     local check_time
     check_time="$(date '+%Y-%m-%d %H:%M:%S')"
@@ -280,12 +547,8 @@ run_modules() {
 
     # 先确认服务器 IP 和主机名
     local reported_ip reported_hostname
-    reported_ip="$(ssh $SSH_OPTS \
-        -o ProxyCommand="$SSH_PROXY" \
-        "$target" "hostname -I 2>/dev/null || hostname" 2>/dev/null | head -1 | xargs)"
-    reported_hostname="$(ssh $SSH_OPTS \
-        -o ProxyCommand="$SSH_PROXY" \
-        "$target" "hostname" 2>/dev/null | head -1 | xargs)"
+    reported_ip="$(run_remote "$target" "hostname -I 2>/dev/null || hostname" | head -1 | xargs)"
+    reported_hostname="$(run_remote "$target" "hostname" | head -1 | xargs)"
 
     if [[ -n "$reported_ip" ]]; then
         echo "  主机名/IP: $reported_hostname / $reported_ip"
@@ -314,11 +577,11 @@ METADATA
         log_module "$mod"
 
         if [[ "$HTML_MODE" == "true" && -n "$temp_dir" ]]; then
-            # HTML 模式：捕获输出到文件
             local out_file="$temp_dir/module_${mod}.txt"
+            export_ssh_session "$target"
             bash "$mod_file" "$target" > "$out_file" 2>&1
         else
-            # 普通模式：直接输出
+            export_ssh_session "$target"
             bash "$mod_file" "$target"
         fi
     done
@@ -330,50 +593,61 @@ METADATA
     fi
 }
 
-# ── 单台模式 ──────────────────────────────────────────────────
+# ── 单台 / 多台模式 ───────────────────────────────────────────
 if [[ "$BATCH_MODE" == "false" ]]; then
-    if [[ -z "$TARGET" ]]; then
+    if [[ ${#TARGETS[@]} -eq 0 ]]; then
         show_help
         exit 1
     fi
 
-    # 确定要执行的模块列表
-    if [[ ${#SELECTED_MODULES[@]} -gt 0 ]]; then
-        MODULES_TO_RUN=("${SELECTED_MODULES[@]}")
-    elif [[ "$QUICK_MODE" == "true" ]]; then
-        MODULES_TO_RUN=("${QUICK_MODULES[@]}")
-    else
-        MODULES_TO_RUN=("${ALL_MODULES[@]}")
+    read -ra MODULES_TO_RUN <<< "$(resolve_modules)"
+
+    # 多台 + HTML → 每台独立报告 + index.html
+    if [[ ${#TARGETS[@]} -gt 1 && "$HTML_MODE" == "true" ]]; then
+        run_multi_html_inspection TARGETS "${MODULES_TO_RUN[@]}"
+        exit 0
     fi
 
+    # 多台无 HTML → 逐台终端输出
+    if [[ ${#TARGETS[@]} -gt 1 ]]; then
+        failed_servers=()
+        success_count=0
+        for TARGET in "${TARGETS[@]}"; do
+            if test_connection "$TARGET"; then
+                run_modules "$TARGET" "" "${MODULES_TO_RUN[@]}"
+                ((success_count++))
+            else
+                failed_servers+=("$TARGET")
+            fi
+        done
+        echo ""
+        echo "============================================"
+        echo "  多台巡检完成: 成功 $success_count / ${#TARGETS[@]}"
+        if [[ ${#failed_servers[@]} -gt 0 ]]; then
+            echo "  失败:"
+            for s in "${failed_servers[@]}"; do echo "    - $s"; done
+        fi
+        echo "============================================"
+        exit 0
+    fi
+
+    TARGET="${TARGETS[0]}"
     test_connection "$TARGET" || exit 1
 
-    # HTML 模式：准备临时目录和输出文件
     TEMP_DIR=""
     if [[ "$HTML_MODE" == "true" ]]; then
-        # 临时目录放在脚本同目录（Windows 可访问），避免 /tmp 路径 Python 无法读取
-        TEMP_BASE="$SCRIPT_DIR/.jumpserver-temp"
-        mkdir -p "$TEMP_BASE" 2>/dev/null
-        TEMP_DIR="$TEMP_BASE/run_$(date '+%s')"
-        mkdir -p "$TEMP_DIR" 2>/dev/null
-        if [[ ! -d "$TEMP_DIR" ]]; then
-            # 降级：用 HOME 目录
-            TEMP_BASE="$HOME/.jumpserver-monitor/tmp"
-            mkdir -p "$TEMP_BASE" 2>/dev/null
-            TEMP_DIR="$TEMP_BASE/run_$(date '+%s')"
-            mkdir -p "$TEMP_DIR" 2>/dev/null
-        fi
-        if [[ ! -d "$TEMP_DIR" ]]; then
+        TEMP_DIR="$(create_temp_dir)" || {
             log_error "无法创建临时目录，HTML 报告生成失败"
             exit 1
-        fi
+        }
         if [[ -z "$HTML_OUTPUT" ]]; then
             HTML_OUTPUT="jumpserver_report_${TARGET//@/_}_$(date '+%Y%m%d_%H%M%S').html"
+            HTML_OUTPUT="${HTML_OUTPUT//:/_}"
         elif [[ "$HTML_OUTPUT" == */ ]]; then
             mkdir -p "$HTML_OUTPUT" 2>/dev/null
-            HTML_OUTPUT="${HTML_OUTPUT}jumpserver_report_${TARGET//@/_}_$(date '+%Y%m%d_%H%M%S').html"
+            HTML_OUTPUT="${HTML_OUTPUT}jumpserver_report_$(target_host_ip "$TARGET")_$(date '+%Y%m%d_%H%M%S').html"
         elif [[ -d "$HTML_OUTPUT" ]]; then
-            HTML_OUTPUT="$HTML_OUTPUT/jumpserver_report_${TARGET//@/_}_$(date '+%Y%m%d_%H%M%S').html"
+            HTML_OUTPUT="$HTML_OUTPUT/jumpserver_report_$(target_host_ip "$TARGET")_$(date '+%Y%m%d_%H%M%S').html"
         fi
         html_dir="$(dirname "$HTML_OUTPUT")"
         if [[ -n "$html_dir" && "$html_dir" != "." ]]; then
@@ -391,7 +665,6 @@ if [[ "$BATCH_MODE" == "false" ]]; then
         echo "============================================"
     fi
 
-    # 清理临时目录
     if [[ -n "$TEMP_DIR" && -d "$TEMP_DIR" ]]; then
         rm -rf "$TEMP_DIR"
     fi
@@ -399,98 +672,57 @@ if [[ "$BATCH_MODE" == "false" ]]; then
     exit 0
 fi
 
-# ── 批量巡检模式 ───────────────────────────────────────────────
+# ── 批量巡检模式（--all，读取 servers.txt）────────────────────
 if [[ "$BATCH_MODE" == "true" ]]; then
     if [[ ! -f "$SERVERS_FILE" ]]; then
         log_error "找不到服务器列表: $SERVERS_FILE"
-        log_info "请编辑 config/servers.txt，每行一个 user@ip"
+        if [[ -f "$CONFIG_DIR/servers.txt.example" ]]; then
+            log_info "首次使用请执行: cp config/servers.txt.example config/servers.txt"
+        fi
+        log_info "编辑 servers.txt，每行一个 user@ip（勿将含密码的文件提交到 Git）"
         exit 1
     fi
 
-    # 确定模块列表
-    if [[ ${#SELECTED_MODULES[@]} -gt 0 ]]; then
-        MODULES_TO_RUN=("${SELECTED_MODULES[@]}")
-    elif [[ "$QUICK_MODE" == "true" ]]; then
-        MODULES_TO_RUN=("${QUICK_MODULES[@]}")
-    else
-        MODULES_TO_RUN=("${ALL_MODULES[@]}")
+    read -ra MODULES_TO_RUN <<< "$(resolve_modules)"
+
+    BATCH_TARGETS=()
+    TARGETS=()
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        line="${line%%#*}"
+        line="${line#"${line%%[![:space:]]*}"}"
+        line="${line%"${line##*[![:space:]]}"}"
+        [[ -z "$line" ]] && continue
+        parse_servers_line "$line" || log_warn "跳过无效行: $line"
+    done < "$SERVERS_FILE"
+
+    BATCH_TARGETS=("${TARGETS[@]}")
+
+    if [[ ${#BATCH_TARGETS[@]} -eq 0 ]]; then
+        log_error "servers.txt 中无有效服务器地址"
+        exit 1
     fi
 
-    # HTML 批量模式：确定输出目录
-    HTML_DIR=""
     if [[ "$HTML_MODE" == "true" ]]; then
-        if [[ -z "$HTML_OUTPUT" ]]; then
-            HTML_DIR="./reports"
-        elif [[ "$HTML_OUTPUT" == */ || "$HTML_OUTPUT" == *\\ ]]; then
-            HTML_DIR="$HTML_OUTPUT"
-        else
-            # 指定了文件名但这是批量模式，当作目录
-            HTML_DIR="$HTML_OUTPUT"
-        fi
-        mkdir -p "$HTML_DIR" 2>/dev/null
-        log_info "批量 HTML 模式: 输出目录=$HTML_DIR"
+        run_multi_html_inspection BATCH_TARGETS "${MODULES_TO_RUN[@]}"
+        exit 0
     fi
 
     echo "============================================"
     echo "  批量巡检模式"
-    echo "  堡垒机: ${BASTION_USER}@${BASTION_HOST}:${BASTION_PORT}"
+    echo "  连接方式: 按目标（默认 ${SSH_DEFAULT_CONNECT_MODE}）"
     echo "  服务器列表: $SERVERS_FILE"
-    if [[ ${#MODULES_TO_RUN[@]} -lt ${#ALL_MODULES[@]} ]]; then
-        echo "  执行模块: ${MODULES_TO_RUN[*]}"
-    else
-        echo "  执行模块: 全部"
-    fi
-    if [[ "$HTML_MODE" == "true" ]]; then
-        echo "  HTML 输出: $HTML_DIR"
-    fi
     echo "============================================"
 
     failed_servers=()
     success_count=0
-    html_reports=()
-
-    while IFS= read -r line || [[ -n "$line" ]]; do
-        # 跳过空行和注释
-        line="$(echo "$line" | sed 's/#.*//' | xargs)"
-        [[ -z "$line" ]] && continue
-
-        if [[ "$line" != *"@"* ]]; then
-            log_warn "跳过格式错误的行: $line"
-            continue
-        fi
-
+    for line in "${BATCH_TARGETS[@]}"; do
         if test_connection "$line"; then
-            if [[ "$HTML_MODE" == "true" ]]; then
-                # 临时目录放在脚本目录下（Windows 可访问）
-                TEMP_BASE="$SCRIPT_DIR/.jumpserver-temp"
-                mkdir -p "$TEMP_BASE" 2>/dev/null
-                TEMP_DIR="$TEMP_BASE/run_$(date '+%s')_$"
-                mkdir -p "$TEMP_DIR" 2>/dev/null
-                if [[ ! -d "$TEMP_DIR" ]]; then
-                    TEMP_BASE="$HOME/.jumpserver-monitor/tmp"
-                    mkdir -p "$TEMP_BASE" 2>/dev/null
-                    TEMP_DIR="$TEMP_BASE/run_$(date '+%s')_$"
-                    mkdir -p "$TEMP_DIR" 2>/dev/null
-                fi
-                if [[ ! -d "$TEMP_DIR" ]]; then
-                    log_error "无法创建临时目录，跳过 $line"
-                    continue
-                fi
-                ip_part="${line##*@}"
-                html_file="$HTML_DIR/report_${ip_part}_$(date '+%Y%m%d_%H%M%S').html"
-                HTML_OUTPUT="$html_file"
-                run_modules "$line" "${MODULES_TO_RUN[@]}" "$TEMP_DIR"
-                html_reports+=("$html_file")
-                rm -rf "$TEMP_DIR" 2>/dev/null
-            else
-                run_modules "$line" "${MODULES_TO_RUN[@]}"
-            fi
+            run_modules "$line" "" "${MODULES_TO_RUN[@]}"
             ((success_count++))
         else
             failed_servers+=("$line")
         fi
-
-    done < "$SERVERS_FILE"
+    done
 
     echo ""
     echo "============================================"
@@ -500,12 +732,6 @@ if [[ "$BATCH_MODE" == "true" ]]; then
         echo "  失败: ${#failed_servers[@]} 台"
         for s in "${failed_servers[@]}"; do
             echo "    - $s"
-        done
-    fi
-    if [[ "$HTML_MODE" == "true" && ${#html_reports[@]} -gt 0 ]]; then
-        echo "  HTML 报告:"
-        for r in "${html_reports[@]}"; do
-            echo "    - $r"
         done
     fi
     echo "============================================"
