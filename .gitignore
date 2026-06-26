@@ -1,16 +1,55 @@
-# 本地连接配置（含内网地址、账号；servers.txt 可能含密码）
-*/config/bastion.conf
-*/config/servers.txt
+# ── 技能本地配置（保留 *.example 模板）──
+**/config/**
+!**/config/**/*.example
 
-# 巡检临时数据与 HTML 报告
-*/scripts/.jumpserver-temp/
-*/reports/
+# ── 技能运行产物 ──
+**/reports/
+**/output/
+**/outputs/
+**/dist/
+**/build/
 
-# SSH 密码临时文件（脚本运行时生成）
+# ── 技能运行时临时目录 ──
+**/.jumpserver-temp/
+**/tmp/
+**/.tmp/
+**/temp/
+**/.cache/
+
+# ── 敏感信息与凭据 ──
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*credentials*
 jumpserver-ssh-pass.*
 
-# Python
-*/__pycache__/
+# ── Python ──
+**/__pycache__/
 *.py[cod]
+*$py.class
+.Python
 .venv/
 venv/
+.pytest_cache/
+.mypy_cache/
+*.egg-info/
+.ruff_cache/
+
+# ── Node.js（部分技能可能使用）──
+node_modules/
+
+# ── 操作系统 ──
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ── 编辑器 / IDE ──
+.idea/
+*.swp
+*.swo
+*~
+
+# ── 误操作产生的副本目录（如 "config copy"）──
+**/* copy/
