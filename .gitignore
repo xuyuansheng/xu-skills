@@ -1,0 +1,16 @@
+# 本地连接配置（含内网地址、账号；servers.txt 可能含密码）
+*/config/bastion.conf
+*/config/servers.txt
+
+# 巡检临时数据与 HTML 报告
+*/scripts/.jumpserver-temp/
+*/reports/
+
+# SSH 密码临时文件（脚本运行时生成）
+jumpserver-ssh-pass.*
+
+# Python
+*/__pycache__/
+*.py[cod]
+.venv/
+venv/
